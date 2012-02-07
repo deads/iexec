@@ -8,8 +8,8 @@ iexec [-cehikopw --] I<program> [I<options>]
 
 =head1 DESCRIPTION
 
-B<iexec> executes a binary I<program> (with its options) as
-a new process in a new tty-less session with session id I<sid>. The
+B<iexec> executes a binary I<program> (with its options) in
+a new child process in a new session with session id I<sid>. The
 I<pid> is the leader of the session I<sid> and is also the leader of
 the session's process group. The daemon's parent is L<init(7)>.
 
@@ -101,7 +101,3 @@ be used for debugging and never within a production system!
 
 B<EXIT_SUCCESS> (or 0) if the process successful daemonized or
 B<EXIT_FAILURE> (or 1) if an error occurred.
-
-=head1 SEE ALSO
-
-L<cmdbuddy-daemon(1)>, L<cmdbuddy-issue(1)>, L<prepbuddy(1)>
