@@ -1,0 +1,107 @@
+=head1 NAME
+
+iexec - calls a program and daemonizes it
+
+=head1 SYNOPSIS
+
+iexec [-cehikopw --] I<program> [I<options>]
+
+=head1 DESCRIPTION
+
+B<iexec> executes a binary I<program> (with its options) as
+a new process in a new tty-less session with session id I<sid>. The
+I<pid> is the leader of the session I<sid> and is also the leader of
+the session's process group. The daemon's parent is L<init(7)>.
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-h|--help>
+
+Displays this usage and exits.
+
+=item B<-c|--close> I<fd>
+
+Closes file descriptor I<fd> prior to executing I<program>.
+
+=item B<-k|--keep-open>
+
+Keeps the shell's stdin, stdout, and stderr open.
+B<WARNING>: for debugging use only!
+
+=item B<-i|-o|-e|--stdin|-stdout|stderr> I<file>
+
+The file to use for standard input (B<-i> or B<--stdin>), standard output (B<-o> or B<--stdout>), and standard error (B<-e> or B<--stderr>)
+
+=item B<-p|--pid-file> I<pid-file>
+
+The file to store the process id of the daemonized I<program>.
+
+=item B<--umask=mask> I<mask>
+
+Sets umask to I<mask> prior to spawning I<program> (e.g. 777, 700, or 000).
+
+=item B<-w|--working-dir> I<wdir>
+
+Changes the working directory to I<wdir> prior to spawning the
+daemonized program.
+
+=item B<--version>
+
+Display the SVN version used to build this command.
+
+=back
+
+=head1 EXAMPLES
+
+=head2 1. Executing a Simple Command as a Daemon
+
+To start node (node.js javascript server) as a daemon, type
+
+   iexec node app.js
+
+=head2 2. Saving the Daemon's PID
+
+Specify a pid filename (with I<-p>) to save the newly executed daemon's process
+id.
+
+   iexec -p /tmp/my.pid node app.js
+
+If the pid is successfully forked,
+the pid of node is written to F</tmp/my.pid>.
+
+=head2 3. Redirecting Standard Output/Error/Input
+
+By default, the I<stdin>, I<stdout>, and I<stderr> streams of the
+daemon point to I</dev/null>. These streams can be changed with the
+I<-i/--stdin>, I<-o/--stdout>, and I<-e/--stderr> options. For
+example,
+
+   iexec -i I<my.in> -o I<my.out> -e I<my.err> node I<app.js>
+
+uses the file I<my.in> for the daemon's standard input, I<my.out> its
+standard output, and I<my.err> for its standard error.
+
+=head2 4. Debugging Your Daemon
+
+To debug a daemon, it is sometimes useful to see the output:
+in a terminal. This can be done with:
+
+   iexec -k node app.js
+
+Uses the stdin, stdout, and stderr file descriptors of I<iexec> for
+the daemonized process. This allows a user to inspect the output of
+the daemon in a terminal.
+
+B<WARNING>: the -k option poses a security risk and should only
+be used for debugging and never within a production system!
+
+=head1 EXIT STATUS
+
+B<EXIT_SUCCESS> (or 0) if the process successful daemonized or
+B<EXIT_FAILURE> (or 1) if an error occurred.
+
+=head1 SEE ALSO
+
+L<cmdbuddy-daemon(1)>, L<cmdbuddy-issue(1)>, L<prepbuddy(1)>

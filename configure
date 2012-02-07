@@ -1,0 +1,73 @@
+#!/bin/bash
+#
+# Author:     Damian Eads
+# Purpose:    Configures sources for compilation with make.
+#
+# FIXME: Use autoconf instead.
+
+usage() {
+   
+    cat <<EOF
+Usage
+-----
+
+   ./configure [-pd]
+
+Synopsis
+--------
+
+   Configures sources for compilation with make.
+
+Options
+-------
+
+   -p|--prefix=dir       The directory to install files (default=/usr/local).
+   -d|--debug            Build C utilities with debugging symbols.
+EOF
+
+}
+
+# First define the options.
+options=$(getopt -o hdp: -l help,debug,prefix: -- "$@")
+
+# If no options are provided, show the usage.
+if [ $? -ne 0 ]; then
+    usage $(basename $0)
+    exit 1
+fi
+
+eval set -- "$options"
+working_dir=$(pwd)
+
+use_prefix=/usr/local
+use_debug=""
+
+# Parse the options
+while true
+do
+    case "$1" in
+    -h|--help)       usage $0 && exit 0;;
+    -p|--prefix)     use_prefix=$2; shift 2;;
+    -d|--debug)      use_debug="y"; shift 1;;
+    --)              shift 1; break ;;
+    *)               break ;;
+    esac
+done
+
+echo Install directory set to ${use_prefix}
+
+touch src/config.h
+
+if [ -z "${debug}" ]; then
+    echo Debugging for C utilities turned off.
+    cat <<EOF >make.inc
+CFLAGS:=-Wall -O3 -pedantic -std=c99
+install_dir:=${use_prefix}
+EOF
+else
+    echo Debugging for C utilities turned on.
+    cat <<EOF >make.inc
+CFLAGS:=-Wall -pedantic -ggdb -std=c99
+install_dir:=${use_prefix}
+EOF
+fi
