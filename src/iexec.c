@@ -23,7 +23,7 @@
 #include "iexec-help.h"
 #include "iexec-help-nontty.h"
 
-#define IEXEC_VERSION "1.0"
+#define IEXEC_VERSION "1.1"
 
 #define IEXEC_OPTION_UMASK 8765
 #define IEXEC_OPTION_VERSION 8766
