@@ -266,9 +266,10 @@ int main(int argc, char **argv) {
   /** Save standard error's file desciptor in case setsid() or execvp() fails. */
   int saved_stderr_fd = 2;
 
-  /** Set the soft or hard limit of the number of file descriptors created by the calling
-      process and its children. Unfortunately, we can't count the number of file
-      descriptors cumulatively across all descendents. */
+  /** Set the soft or hard limit of the number of file descriptors
+      created by the calling process and its children. Unfortunately,
+      we can't count the number of file descriptors cumulatively
+      across all descendents. */
   if (config.rlimit_soft_fd > 0 || config.rlimit_hard_fd > 0) {
     struct rlimit fdlimit;
     /* Get the current limits. */
@@ -288,20 +289,23 @@ int main(int argc, char **argv) {
     if (config.rlimit_hard_fd > 0) {
       fdlimit.rlim_max = config.rlimit_hard_fd;
     }
-    /* If the soft limit option is greater than the hard limit, set the
-       soft limit to the hard limit. */
+    /* If the soft limit option is greater than the hard limit, set
+       the soft limit to the hard limit. */
     if (config.rlimit_soft_fd > fdlimit.rlim_max) {
       fdlimit.rlim_cur = fdlimit.rlim_max;
     }
     setrlimit(RLIMIT_NOFILE, &fdlimit);
   }
 
-  /** Set the hard limit of the number of processes that can be running under the
-      effective uid of the calling process. Child processes inherit this limit. */
-  if (config.rlimit_soft_nproc >= -1 || config.rlimit_hard_nproc >= -1) {
+  /** Set the hard limit of the number of processes that can be
+      running under the effective uid of the calling process. Child
+      processes inherit this limit. */
+  if (config.rlimit_soft_nproc != IEXEC_RLIMIT_UNCHANGED
+      || config.rlimit_hard_nproc != IEXEC_RLIMIT_UNCHANGED) {
     struct rlimit nproclimit;
     getrlimit(RLIMIT_NPROC, &nproclimit);
-    /** If the soft limit option is specified, set the corresponding value in the structure. */
+    /** If the soft limit option is specified, set the corresponding
+        value in the structure. */
     if (config.rlimit_soft_nproc != IEXEC_RLIMIT_UNCHANGED) {
       if (nproclimit.rlim_max != RLIM_INFINITY                  /* hard max is not infinite */
           && config.rlimit_soft_nproc > nproclimit.rlim_max     /* soft max option is greater than current hard max. */) {
@@ -310,12 +314,13 @@ int main(int argc, char **argv) {
       }
       nproclimit.rlim_cur = config.rlimit_soft_nproc;
     }
-    /** If the hard limit option is specified, set the corresponding value in the structure. */
+    /** If the hard limit option is specified, set the corresponding
+        value in the structure. */
     if (config.rlimit_hard_nproc != IEXEC_RLIMIT_UNCHANGED) {
       nproclimit.rlim_max = config.rlimit_hard_nproc;
     }
-    /* If the soft limit option is greater than the current/new hard limit, set the soft limit to the
-       hard limit. */
+    /* If the soft limit option is greater than the current/new hard
+       limit, set the soft limit to the hard limit. */
     if (nproclimit.rlim_max != RLIM_INFINITY
         && nproclimit.rlim_cur > nproclimit.rlim_max) {
       nproclimit.rlim_cur = nproclimit.rlim_max;
