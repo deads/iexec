@@ -270,28 +270,31 @@ int main(int argc, char **argv) {
       created by the calling process and its children. Unfortunately,
       we can't count the number of file descriptors cumulatively
       across all descendents. */
-  if (config.rlimit_soft_fd > 0 || config.rlimit_hard_fd > 0) {
+  if (config.rlimit_soft_fd != IEXEC_RLIMIT_UNCHANGED
+      || config.rlimit_hard_fd != IEXEC_RLIMIT_UNCHANGED) {
     struct rlimit fdlimit;
     /* Get the current limits. */
     getrlimit(RLIMIT_NOFILE, &fdlimit);
 
-    /* Check to see if the soft limit is valid. */
-    if (config.rlimit_soft_fd > fdlimit.rlim_max) {
-      error(0, 0, "file descriptor limit specified with --rlimit-soft-fd=%d exceeds the hard maximum %d",  config.rlimit_soft_fd, (int)fdlimit.rlim_max);
-      exit(EXIT_FAILURE);
-    }
-
     /* If the soft limit was specified, set it in the structure. */
-    if (config.rlimit_soft_fd > 0) {
+    if (config.rlimit_soft_fd != IEXEC_RLIMIT_UNCHANGED) {
+      /* Check to see if the soft limit is valid. */
+      if (fdlimit.rlim_max != RLIM_INFINITY
+          && config.rlimit_soft_fd > fdlimit.rlim_max) {
+        error(0, 0, "file descriptor limit specified with --rlimit-soft-fd=%d exceeds the hard maximum %d",  config.rlimit_soft_fd, (int)fdlimit.rlim_max);
+        exit(EXIT_FAILURE);
+      }
+
       fdlimit.rlim_cur = config.rlimit_soft_fd;
     }
     /* If the hard limit was specified, set it in the structure. */
-    if (config.rlimit_hard_fd > 0) {
+    if (config.rlimit_hard_fd != IEXEC_RLIMIT_UNCHANGED) {
       fdlimit.rlim_max = config.rlimit_hard_fd;
     }
     /* If the soft limit option is greater than the hard limit, set
        the soft limit to the hard limit. */
-    if (config.rlimit_soft_fd > fdlimit.rlim_max) {
+    if (fdlimit.rlim_max != RLIM_INFINITY
+        && fdlimit.rlim_cur > fdlimit.rlim_max) {
       fdlimit.rlim_cur = fdlimit.rlim_max;
     }
     setrlimit(RLIMIT_NOFILE, &fdlimit);
