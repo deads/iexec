@@ -118,18 +118,15 @@ int set_cloexec_flag(int desc) {
 	return fcntl(desc, F_SETFD, oldflags);
 }
 
-
 /**
- * Parse the command line options.
+ * Sets values in the iexec_config struct to sane values.
  *
- * @param argc   The command line argument count.
- * @param argv   The command line argument array.
- * @param config The configuration to store parsed option values in.
+ * /dev/null is used for standard input, output, and error.
+ *
+ * The working directory is left unchanged. No pid file is
+ * used. No resource limits are changed.
  */
-
-void parse_options(int argc, char **argv, iexec_config *config) {
-  int option_index = 0;
-
+void iexec_config_set_default_values(iexec_config *config) {
   /* Write default values to the configuration.*/
   config->keep_open = 0;
   config->umask = -1;
@@ -144,6 +141,19 @@ void parse_options(int argc, char **argv, iexec_config *config) {
     config->soft_limits[i] = IEXEC_RLIMIT_UNCHANGED;
     config->hard_limits[i] = IEXEC_RLIMIT_UNCHANGED;
   }
+}
+
+/**
+ * Parse the command line options.
+ *
+ * @param argc   The command line argument count.
+ * @param argv   The command line argument array.
+ * @param config The configuration to store parsed option values in.
+ */
+
+void parse_options(int argc, char **argv, iexec_config *config) {
+  int option_index = 0;
+  iexec_config_set_default_values(config);
   while (1) {
     /* Define the long options in a structure array.*/
     static struct option long_options[] = {
