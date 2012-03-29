@@ -140,8 +140,9 @@ void parse_options(int argc, char **argv, iexec_config *config) {
   config->use_working_dir = 0;
   config->fds_to_close = 0;
   config->num_fds_to_close = 0;
-  for (size_t i = 0; i < RLIMIT_NLIMITS; i++) {
+  for (int i = 0; i < RLIMIT_NLIMITS; i++) {
     config->soft_limits[i] = IEXEC_RLIMIT_UNCHANGED;
+    config->hard_limits[i] = IEXEC_RLIMIT_UNCHANGED;
   }
   while (1) {
     /* Define the long options in a structure array.*/
@@ -205,13 +206,23 @@ void parse_options(int argc, char **argv, iexec_config *config) {
     /* If a soft limit was specified, change the corresponding value in the soft_limits
      array.*/
     if (c >= IEXEC_OPTION_RLIMIT_SOFT && c < IEXEC_OPTION_RLIMIT_SOFT + RLIMIT_NLIMITS) {
-      config->soft_limits[c-IEXEC_OPTION_RLIMIT_SOFT] = atoi(optarg);
+      int limit_number = c - IEXEC_OPTION_RLIMIT_SOFT;
+      int limit_value = atoi(optarg);
+#ifdef IEXEC_DEBUG
+      printf("setting %s_SOFT=%d\n", limit_names[limit_number], limit_value);
+#endif
+      config->soft_limits[limit_number] = limit_value;
       continue;
     }
     /* If a hard limit was specified, change the corresponding value in the hard_limits
      array.*/
     if (c >= IEXEC_OPTION_RLIMIT_HARD && c < IEXEC_OPTION_RLIMIT_HARD + RLIMIT_NLIMITS) {
-      config->hard_limits[c-IEXEC_OPTION_RLIMIT_HARD] = atoi(optarg);
+      int limit_number = c - IEXEC_OPTION_RLIMIT_HARD;
+      int limit_value = atoi(optarg);
+#ifdef IEXEC_DEBUG
+      printf("setting %s_HARD=%d\n", limit_names[limit_number], limit_value);
+#endif
+      config->hard_limits[limit_number] = limit_value;
       continue;
     }
 
@@ -335,7 +346,15 @@ int main(int argc, char **argv) {
           && current_limit.rlim_cur > current_limit.rlim_max) {
         current_limit.rlim_cur = current_limit.rlim_max;
       }
-      setrlimit(i, &current_limit);
+      if (setrlimit(i, &current_limit) < 0) {
+        if (soft_limit != IEXEC_RLIMIT_UNCHANGED) {
+          error(0, errno, "error setting resource limit %s_SOFT=%d", limit_names[i], soft_limit);
+        }
+        if (hard_limit != IEXEC_RLIMIT_UNCHANGED) {
+          error(0, errno, "error setting resource limit %s_HARD=%d", limit_names[i], hard_limit);
+        }
+        exit(EXIT_FAILURE);
+      }
     }
   }
   

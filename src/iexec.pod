@@ -38,27 +38,13 @@ The file to use for standard input (B<-i> or B<--stdin>), standard output (B<-o>
 
 The file to store the process id of the daemonized I<program>.
 
-=item B<--rlimit-hard-nofile>
+=item B<--rlimit-cpu-hard> B<--rlimit-fsize-hard> B<--rlimit-data-hard> B<--rlimit-stack-hard> B<--rlimit-core-hard> B<--rlimit-rss-hard> B<--rlimit-nofile-hard> B<--rlimit-nproc-hard> B<--rlimit-memlock-hard> B<--rlimit-locks-hard> B<--rlimit-sigpending-hard> B<--rlimit-msgqueue-hard> B<--rlimit-nice-hard> B<--rlimit-rtprio-hard> v
 
-Sets the hard limit for the number of file descriptors that can be
-allocated at the same time for the calling process. Unfortunately, 
-child processes have their own file descriptor count.
+Sets the hard resource limit using B<setrlimit> to B<v>. If a B<--rlimit-*-soft> argument is specified for the same resource, the value is set together in a single B<setrlimit> call. If the current soft limit is lower than the new hard resource limit, the soft limit is set to this value.
 
-=item B<--rlimit-hard-nproc>
+=item B<--rlimit-cpu-soft> B<--rlimit-fsize-soft> B<--rlimit-data-soft> B<--rlimit-stack-soft> B<--rlimit-core-soft> B<--rlimit-rss-soft> B<--rlimit-nofile-soft> B<--rlimit-nproc-soft> B<--rlimit-memlock-soft> B<--rlimit-locks-soft> B<--rlimit-sigpending-soft> B<--rlimit-msgqueue-soft> B<--rlimit-nice-soft> B<--rlimit-rtprio-soft> v
 
-Sets the hard limit for the number of processes running under the caller
-processes real uid.
-
-=item B<--rlimit-soft-nofile>
-
-Sets the soft limit for the number of file descriptors that can be
-allocated at the same time for the calling process. Unfortunately, 
-child processes have their own file descriptor count.
-
-=item B<--rlimit-soft-nproc>
-
-Sets the soft limit for the number of processes running under the caller
-processes real uid.
+Sets the soft resource limit using B<setrlimit> to B<v>. If a B<--rlimit-*-hard> argument is specified for the same resource, the values are set in a single B<setrlimit> call. An error results when the soft limit specified is higher than the current hard resource limit.
 
 =item B<--umask=mask> I<mask>
 
