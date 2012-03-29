@@ -25,14 +25,32 @@
 
 #define IEXEC_VERSION "1.1"
 
-#define IEXEC_OPTION_UMASK 8765
-#define IEXEC_OPTION_VERSION 8766
-#define IEXEC_OPTION_RLIMIT_SOFT_NOFILE 8767
-#define IEXEC_OPTION_RLIMIT_SOFT_NPROC 8768
-#define IEXEC_OPTION_RLIMIT_HARD_NOFILE 8769
-#define IEXEC_OPTION_RLIMIT_HARD_NPROC 8770
+#define IEXEC_OPTION_UMASK 7001
+#define IEXEC_OPTION_VERSION 7002
+
+#define IEXEC_OPTION_RLIMIT_SOFT 8000
+#define IEXEC_OPTION_RLIMIT_HARD 9000
 
 #define IEXEC_RLIMIT_UNCHANGED -2
+
+/** A string name for each limit constant (indexed by constant). */
+const char *limit_names[] = {
+  [RLIMIT_CPU] = "RLIMIT_CPU",
+  [RLIMIT_FSIZE] = "RLIMIT_FSIZE",
+  [RLIMIT_DATA] = "RLIMIT_DATA",
+  [RLIMIT_STACK] = "RLIMIT_STACK",
+  [RLIMIT_CORE] = "RLIMIT_CORE",
+  [RLIMIT_RSS] = "RLIMIT_RSS",
+  [RLIMIT_NOFILE] = "RLIMIT_NOFILE",
+  [RLIMIT_AS] = "RLIMIT_AS",
+  [RLIMIT_NPROC] = "RLIMIT_NPROC",
+  [RLIMIT_MEMLOCK] = "RLIMIT_MEMLOCK",
+  [RLIMIT_LOCKS] = "RLIMIT_LOCKS",
+  [RLIMIT_SIGPENDING] = "RLIMIT_SIGPENDING",
+  [RLIMIT_MSGQUEUE] = "RLIMIT_MSGQUEUE",
+  [RLIMIT_NICE] = "RLIMIT_NICE",
+  [RLIMIT_RTPRIO] = "RLIMIT_RTPRIO"
+};
 
 /**
  * Holds parsed parameters passed to the iexec utility.
@@ -57,10 +75,10 @@ typedef struct iexec_config {
                             arguments. */
   char **remaining_argv;/** The remaining argument values after iexec
                             arguments. */
-  int rlimit_soft_nofile;   /** The soft limit on RLIMIT_FD. */
-  int rlimit_soft_nproc;/** The soft limit on RLIMIT_NOFILE. */
-  int rlimit_hard_nofile;   /** The hard limit on RLIMIT_NOFILE. */
-  int rlimit_hard_nproc;/** The hard limit on RLIMIT_NOFILE. */
+  /* Values to set soft resource limits for setrlimit/getrlimit. */
+  long soft_limits[RLIMIT_NLIMITS];
+  /* Values to set hard resource limits for setrlimit/getrlimit. */
+  long hard_limits[RLIMIT_NLIMITS];
 } iexec_config;
 
 /**
@@ -122,10 +140,9 @@ void parse_options(int argc, char **argv, iexec_config *config) {
   config->use_working_dir = 0;
   config->fds_to_close = 0;
   config->num_fds_to_close = 0;
-  config->rlimit_soft_nofile = IEXEC_RLIMIT_UNCHANGED;
-  config->rlimit_soft_nproc = IEXEC_RLIMIT_UNCHANGED;
-  config->rlimit_hard_nofile = IEXEC_RLIMIT_UNCHANGED;
-  config->rlimit_hard_nproc = IEXEC_RLIMIT_UNCHANGED;
+  for (size_t i = 0; i < RLIMIT_NLIMITS; i++) {
+    config->soft_limits[i] = IEXEC_RLIMIT_UNCHANGED;
+  }
   while (1) {
     /* Define the long options in a structure array.*/
     static struct option long_options[] = {
@@ -133,10 +150,34 @@ void parse_options(int argc, char **argv, iexec_config *config) {
       {"keep-open",        no_argument,       0, 'k'},
       {"close",            required_argument, 0, 'c'},
       {"pid",              required_argument, 0, 'p'},
-      {"rlimit-soft-nofile",   required_argument, 0, IEXEC_OPTION_RLIMIT_SOFT_NOFILE},
-      {"rlimit-soft-nproc",required_argument, 0, IEXEC_OPTION_RLIMIT_SOFT_NPROC},
-      {"rlimit-hard-nofile",   required_argument, 0, IEXEC_OPTION_RLIMIT_HARD_NOFILE},
-      {"rlimit-hard-nproc",required_argument, 0, IEXEC_OPTION_RLIMIT_HARD_NPROC},
+      {"rlimit-cpu-hard",       required_argument, 0, IEXEC_OPTION_RLIMIT_HARD + RLIMIT_CPU},
+      {"rlimit-fsize-hard",     required_argument, 0, IEXEC_OPTION_RLIMIT_HARD + RLIMIT_FSIZE},
+      {"rlimit-data-hard",      required_argument, 0, IEXEC_OPTION_RLIMIT_HARD + RLIMIT_DATA},
+      {"rlimit-stack-hard",     required_argument, 0, IEXEC_OPTION_RLIMIT_HARD + RLIMIT_STACK},
+      {"rlimit-core-hard",      required_argument, 0, IEXEC_OPTION_RLIMIT_HARD + RLIMIT_CORE},
+      {"rlimit-rss-hard",       required_argument, 0, IEXEC_OPTION_RLIMIT_HARD + RLIMIT_RSS},
+      {"rlimit-nofile-hard",    required_argument, 0, IEXEC_OPTION_RLIMIT_HARD + RLIMIT_NOFILE},
+      {"rlimit-nproc-hard",     required_argument, 0, IEXEC_OPTION_RLIMIT_HARD + RLIMIT_NPROC},
+      {"rlimit-memlock-hard",   required_argument, 0, IEXEC_OPTION_RLIMIT_HARD + RLIMIT_MEMLOCK},
+      {"rlimit-locks-hard",     required_argument, 0, IEXEC_OPTION_RLIMIT_HARD + RLIMIT_LOCKS},
+      {"rlimit-sigpending-hard",required_argument, 0, IEXEC_OPTION_RLIMIT_HARD + RLIMIT_SIGPENDING},
+      {"rlimit-msgqueue-hard",  required_argument, 0, IEXEC_OPTION_RLIMIT_HARD + RLIMIT_MSGQUEUE},
+      {"rlimit-nice-hard",      required_argument, 0, IEXEC_OPTION_RLIMIT_HARD + RLIMIT_NICE},
+      {"rlimit-rtprio-hard",    required_argument, 0, IEXEC_OPTION_RLIMIT_HARD + RLIMIT_RTPRIO},
+      {"rlimit-cpu-soft",       required_argument, 0, IEXEC_OPTION_RLIMIT_SOFT + RLIMIT_CPU},
+      {"rlimit-fsize-soft",     required_argument, 0, IEXEC_OPTION_RLIMIT_SOFT + RLIMIT_FSIZE},
+      {"rlimit-data-soft",      required_argument, 0, IEXEC_OPTION_RLIMIT_SOFT + RLIMIT_DATA},
+      {"rlimit-stack-soft",     required_argument, 0, IEXEC_OPTION_RLIMIT_SOFT + RLIMIT_STACK},
+      {"rlimit-core-soft",      required_argument, 0, IEXEC_OPTION_RLIMIT_SOFT + RLIMIT_CORE},
+      {"rlimit-rss-soft",       required_argument, 0, IEXEC_OPTION_RLIMIT_SOFT + RLIMIT_RSS},
+      {"rlimit-nofile-soft",    required_argument, 0, IEXEC_OPTION_RLIMIT_SOFT + RLIMIT_NOFILE},
+      {"rlimit-nproc-soft",     required_argument, 0, IEXEC_OPTION_RLIMIT_SOFT + RLIMIT_NPROC},
+      {"rlimit-memlock-soft",   required_argument, 0, IEXEC_OPTION_RLIMIT_SOFT + RLIMIT_MEMLOCK},
+      {"rlimit-locks-soft",     required_argument, 0, IEXEC_OPTION_RLIMIT_SOFT + RLIMIT_LOCKS},
+      {"rlimit-sigpending-soft",required_argument, 0, IEXEC_OPTION_RLIMIT_SOFT + RLIMIT_SIGPENDING},
+      {"rlimit-msgqueue-soft",  required_argument, 0, IEXEC_OPTION_RLIMIT_SOFT + RLIMIT_MSGQUEUE},
+      {"rlimit-nice-soft",      required_argument, 0, IEXEC_OPTION_RLIMIT_SOFT + RLIMIT_NICE},
+      {"rlimit-rtprio-soft",    required_argument, 0, IEXEC_OPTION_RLIMIT_SOFT + RLIMIT_RTPRIO},
       {"stdin",            required_argument, 0, 'i'},
       {"stdout",           required_argument, 0, 'o'},
       {"stderr",           required_argument, 0, 'e'},
@@ -159,6 +200,19 @@ void parse_options(int argc, char **argv, iexec_config *config) {
     /* If its the end of the options, leave the loop. */
     if (c == -1) {
       break;
+    }
+
+    /* If a soft limit was specified, change the corresponding value in the soft_limits
+     array.*/
+    if (c >= IEXEC_OPTION_RLIMIT_SOFT && c < IEXEC_OPTION_RLIMIT_SOFT + RLIMIT_NLIMITS) {
+      config->soft_limits[c-IEXEC_OPTION_RLIMIT_SOFT] = atoi(optarg);
+      continue;
+    }
+    /* If a hard limit was specified, change the corresponding value in the hard_limits
+     array.*/
+    if (c >= IEXEC_OPTION_RLIMIT_HARD && c < IEXEC_OPTION_RLIMIT_HARD + RLIMIT_NLIMITS) {
+      config->hard_limits[c-IEXEC_OPTION_RLIMIT_HARD] = atoi(optarg);
+      continue;
     }
 
     /* Let's display the usage, set a configuration value, or flag
@@ -209,18 +263,6 @@ void parse_options(int argc, char **argv, iexec_config *config) {
       version(0);
       exit(EXIT_SUCCESS);
       break;
-    case IEXEC_OPTION_RLIMIT_SOFT_NOFILE:
-      config->rlimit_soft_nofile = atoi(optarg);
-      break;
-    case IEXEC_OPTION_RLIMIT_SOFT_NPROC:
-      config->rlimit_soft_nproc = atoi(optarg);
-      break;
-    case IEXEC_OPTION_RLIMIT_HARD_NOFILE:
-      config->rlimit_hard_nofile = atoi(optarg);
-      break;
-    case IEXEC_OPTION_RLIMIT_HARD_NPROC:
-      config->rlimit_hard_nproc = atoi(optarg);
-      break;
     case 'w':
       config->use_working_dir = optarg;
       break;
@@ -266,71 +308,36 @@ int main(int argc, char **argv) {
   /** Save standard error's file desciptor in case setsid() or execvp() fails. */
   int saved_stderr_fd = 2;
 
-  /** Set the soft or hard limit of the number of file descriptors
-      created by the calling process and its children. Unfortunately,
-      we can't count the number of file descriptors cumulatively
-      across all descendents. */
-  if (config.rlimit_soft_nofile != IEXEC_RLIMIT_UNCHANGED
-      || config.rlimit_hard_nofile != IEXEC_RLIMIT_UNCHANGED) {
-    struct rlimit fdlimit;
-    /* Get the current limits. */
-    getrlimit(RLIMIT_NOFILE, &fdlimit);
-
-    /* If the soft limit was specified, set it in the structure. */
-    if (config.rlimit_soft_nofile != IEXEC_RLIMIT_UNCHANGED) {
-      /* Check to see if the soft limit is valid. */
-      if (fdlimit.rlim_max != RLIM_INFINITY
-          && config.rlimit_soft_nofile > fdlimit.rlim_max) {
-        error(0, 0, "file descriptor limit specified with --rlimit-soft-nofile=%d exceeds the hard maximum %d",  config.rlimit_soft_nofile, (int)fdlimit.rlim_max);
-        exit(EXIT_FAILURE);
+  for (int i = 0; i < RLIMIT_NLIMITS; i++) {
+    const int soft_limit = config.soft_limits[i];
+    const int hard_limit = config.hard_limits[i];
+    if (soft_limit > IEXEC_RLIMIT_UNCHANGED || hard_limit > IEXEC_RLIMIT_UNCHANGED) {
+      struct rlimit current_limit;
+      getrlimit(i, &current_limit);
+      /* If the soft limit was specified, set it in the structure. */
+      if (soft_limit > IEXEC_RLIMIT_UNCHANGED) {
+        /* Check to see if the soft limit is valid. */
+        if (current_limit.rlim_max != RLIM_INFINITY
+            && soft_limit > current_limit.rlim_max) {
+          error(0, 0, "specified %s_SOFT=%d exceeds %s_HARD=%d",
+                limit_names[i], soft_limit, limit_names[i], (int)current_limit.rlim_max);
+          exit(EXIT_FAILURE);
+        }
+        current_limit.rlim_cur = soft_limit;
       }
-
-      fdlimit.rlim_cur = config.rlimit_soft_nofile;
-    }
-    /* If the hard limit was specified, set it in the structure. */
-    if (config.rlimit_hard_nofile != IEXEC_RLIMIT_UNCHANGED) {
-      fdlimit.rlim_max = config.rlimit_hard_nofile;
-    }
-    /* If the soft limit option is greater than the hard limit, set
-       the soft limit to the hard limit. */
-    if (fdlimit.rlim_max != RLIM_INFINITY
-        && fdlimit.rlim_cur > fdlimit.rlim_max) {
-      fdlimit.rlim_cur = fdlimit.rlim_max;
-    }
-    setrlimit(RLIMIT_NOFILE, &fdlimit);
-  }
-
-  /** Set the hard limit of the number of processes that can be
-      running under the effective uid of the calling process. Child
-      processes inherit this limit. */
-  if (config.rlimit_soft_nproc != IEXEC_RLIMIT_UNCHANGED
-      || config.rlimit_hard_nproc != IEXEC_RLIMIT_UNCHANGED) {
-    struct rlimit nproclimit;
-    getrlimit(RLIMIT_NPROC, &nproclimit);
-    /** If the soft limit option is specified, set the corresponding
-        value in the structure. */
-    if (config.rlimit_soft_nproc != IEXEC_RLIMIT_UNCHANGED) {
-      if (nproclimit.rlim_max != RLIM_INFINITY                  /* hard max is not infinite */
-          && config.rlimit_soft_nproc > nproclimit.rlim_max     /* soft max option is greater than current hard max. */) {
-        error(0, 0, "process count limit specified with --rlimit-soft-nproc=%d exceeds the hard maximum %d",  config.rlimit_soft_nproc, (int)nproclimit.rlim_max);
-        exit(EXIT_FAILURE);
+      /* If the hard limit was specified, set it in the structure. */
+      if (hard_limit > IEXEC_RLIMIT_UNCHANGED) {
+        current_limit.rlim_max = hard_limit;
       }
-      nproclimit.rlim_cur = config.rlimit_soft_nproc;
+      /* If the soft limit option is greater than the hard limit, set
+         the soft limit to the hard limit. */
+      if (current_limit.rlim_max != RLIM_INFINITY
+          && current_limit.rlim_cur > current_limit.rlim_max) {
+        current_limit.rlim_cur = current_limit.rlim_max;
+      }
+      setrlimit(i, &current_limit);
     }
-    /** If the hard limit option is specified, set the corresponding
-        value in the structure. */
-    if (config.rlimit_hard_nproc != IEXEC_RLIMIT_UNCHANGED) {
-      nproclimit.rlim_max = config.rlimit_hard_nproc;
-    }
-    /* If the soft limit option is greater than the current/new hard
-       limit, set the soft limit to the hard limit. */
-    if (nproclimit.rlim_max != RLIM_INFINITY
-        && nproclimit.rlim_cur > nproclimit.rlim_max) {
-      nproclimit.rlim_cur = nproclimit.rlim_max;
-    }
-    setrlimit(RLIMIT_NPROC, &nproclimit);
   }
-
   
   /** If the stdin,stderr,stdout file descriptors are not to be kept
       open (ie they are to be closed) then check if the paths provided

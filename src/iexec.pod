@@ -38,10 +38,10 @@ The file to use for standard input (B<-i> or B<--stdin>), standard output (B<-o>
 
 The file to store the process id of the daemonized I<program>.
 
-=item B<--rlimit-hard-fd>
+=item B<--rlimit-hard-nofile>
 
 Sets the hard limit for the number of file descriptors that can be
-open at the same time for the calling process. Unfortunately, 
+allocated at the same time for the calling process. Unfortunately, 
 child processes have their own file descriptor count.
 
 =item B<--rlimit-hard-nproc>
@@ -49,17 +49,16 @@ child processes have their own file descriptor count.
 Sets the hard limit for the number of processes running under the caller
 processes real uid.
 
-=item B<--rlimit-soft-fd>
+=item B<--rlimit-soft-nofile>
 
 Sets the soft limit for the number of file descriptors that can be
-open at the same time for the calling process. Unfortunately, 
+allocated at the same time for the calling process. Unfortunately, 
 child processes have their own file descriptor count.
 
 =item B<--rlimit-soft-nproc>
 
 Sets the soft limit for the number of processes running under the caller
 processes real uid.
-
 
 =item B<--umask=mask> I<mask>
 

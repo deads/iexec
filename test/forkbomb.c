@@ -19,6 +19,7 @@ int main()
     /* If success, stop forking. */
     else if (new_pid > 0) {
       printf("fork succeeded parent_pid=%d child_pid=%d\n", getppid(), new_pid);
+      exit(EXIT_FAILURE);
     }
   } 
 }
