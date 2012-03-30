@@ -337,6 +337,40 @@ void parse_options(int argc, char **argv, iexec_config *config) {
 }
 
 /**
+ * If the first file does not exist, it is first created.
+ *
+ * Returns a negative value if an error occured, 0 if the filenames refer to different
+ * files and 1 if they refer to the same file.
+ */
+int same_file(const char *fn1, const char *fn2) {
+  struct stat s1;
+  struct stat s2;
+  int r1 = stat(fn1, &s1);
+  if (r1 < 0) {
+    /** If the file does not exist, create it because it will be used
+        anyway. */
+    if (errno == ENOENT) {
+      int tresult = creat(fn1, 0666);
+      if (tresult < 0) {
+        return tresult;
+      }
+      close(tresult);
+      /** Now try stat() again. */
+      r1 = stat(fn1, &s1);
+    } else { /* An error other than ENOENT occured, propogate it downward. */
+      return r1;
+    }
+  }
+  /* Now try the stat on the second file. */
+  int r2 = stat(fn2, &s2);
+  if (r2 < 0) {
+    return r2;
+  }
+  /* The files are the same iff their device and inode are the same. */
+  return (s1.st_dev == s2.st_dev && s1.st_ino == s2.st_ino) ? 1 : 0; 
+} 
+
+/**
  * The main function.
  *
  * @param argc   The command line argument count.
@@ -477,7 +511,7 @@ int main(int argc, char **argv) {
       }
       exit(EXIT_FAILURE);
     }
-    /** Try reopening standard error input the file specified -i. */
+    /** Try reopening standard input using the file specified -i. */
     result = freopen(config.use_stdin_file, "r", stdin);
     if (result == 0) {
       if (dup2(saved_stderr_fd, STDERR_FILENO) == STDERR_FILENO) {
@@ -485,16 +519,40 @@ int main(int argc, char **argv) {
       }
       exit(EXIT_FAILURE);
     }
+    /** If both the standard output and standard error refer to the same
+         file, truncate the file and use append mode in the later freopen
+         calls. Otherwise, use write with truncate*/
+    int outerr_same = same_file(config.use_stdout_file, config.use_stderr_file);
+    const char *open_mode = "a";
+    if (outerr_same < 0) { /*** An error occurred. */
+      if (errno != ENOENT) {
+        if (dup2(saved_stderr_fd, STDERR_FILENO) == STDERR_FILENO) {
+          error(0, errno, "stat() error");
+        }
+        exit(EXIT_FAILURE);
+      }
+      open_mode = "w";
+    } else if (outerr_same == 0) { /*** DIFFERENT: use write with truncate mode. */
+      open_mode = "w";
+    }
     /** Try reopening standard output using the file specified with -o. */
-    result = freopen(config.use_stdout_file, "a", stdout);
+    result = freopen(config.use_stdout_file, open_mode, stdout);
     if (result == 0) {
       if (dup2(saved_stderr_fd, STDERR_FILENO) == STDERR_FILENO) {
         error(0, errno, "failed to redirect standard output");
       }
       exit(EXIT_FAILURE);
     }
+    else if (outerr_same == 1) { /** Truncate the file. */
+      if (ftruncate(1, 0) < 0) {
+        if (dup2(saved_stderr_fd, STDERR_FILENO) == STDERR_FILENO) {
+          error(0, errno, "truncate() error");
+        }
+      }
+    }
+
     /** Try reopening standard error using the file specified with -e. */
-    result = freopen(config.use_stderr_file, "a", stderr);
+    result = freopen(config.use_stderr_file, open_mode, stderr);
     if (result == 0) {
       if (dup2(saved_stderr_fd, STDERR_FILENO) == STDERR_FILENO) {
         error(0, errno, "failed to redirect standard error");
