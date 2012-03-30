@@ -549,7 +549,7 @@ int main(int argc, char **argv) {
       struct stat out_stat;
       if (stat(config.use_stdout_file, &out_stat) < 0) {
         if (dup2(saved_stderr_fd, STDERR_FILENO) == STDERR_FILENO) {
-          error(0, errno, "truncate() error");
+          error(0, errno, "stat() error");
         }
         exit(EXIT_FAILURE);
       }
