@@ -182,6 +182,7 @@ void parse_options(int argc, char **argv, iexec_config *config) {
       {"help",                  no_argument,       0, 'h'},
       {"keep-open",             no_argument,       0, 'k'},
       {"pid",                   required_argument, 0, 'p'},
+      {"rlimit-as-hard",        required_argument, 0, IEXEC_OPTION_RLIMIT_HARD + RLIMIT_AS},
       {"rlimit-cpu-hard",       required_argument, 0, IEXEC_OPTION_RLIMIT_HARD + RLIMIT_CPU},
       {"rlimit-fsize-hard",     required_argument, 0, IEXEC_OPTION_RLIMIT_HARD + RLIMIT_FSIZE},
       {"rlimit-data-hard",      required_argument, 0, IEXEC_OPTION_RLIMIT_HARD + RLIMIT_DATA},
@@ -196,6 +197,7 @@ void parse_options(int argc, char **argv, iexec_config *config) {
       {"rlimit-msgqueue-hard",  required_argument, 0, IEXEC_OPTION_RLIMIT_HARD + RLIMIT_MSGQUEUE},
       {"rlimit-nice-hard",      required_argument, 0, IEXEC_OPTION_RLIMIT_HARD + RLIMIT_NICE},
       {"rlimit-rtprio-hard",    required_argument, 0, IEXEC_OPTION_RLIMIT_HARD + RLIMIT_RTPRIO},
+      {"rlimit-as-soft",        required_argument, 0, IEXEC_OPTION_RLIMIT_SOFT + RLIMIT_AS},
       {"rlimit-cpu-soft",       required_argument, 0, IEXEC_OPTION_RLIMIT_SOFT + RLIMIT_CPU},
       {"rlimit-fsize-soft",     required_argument, 0, IEXEC_OPTION_RLIMIT_SOFT + RLIMIT_FSIZE},
       {"rlimit-data-soft",      required_argument, 0, IEXEC_OPTION_RLIMIT_SOFT + RLIMIT_DATA},
@@ -544,9 +546,18 @@ int main(int argc, char **argv) {
       exit(EXIT_FAILURE);
     }
     else if (outerr_same == 1) { /** Truncate the file. */
-      if (ftruncate(1, 0) < 0) {
+      struct stat out_stat;
+      if (stat(config.use_stdout_file, &out_stat) < 0) {
         if (dup2(saved_stderr_fd, STDERR_FILENO) == STDERR_FILENO) {
           error(0, errno, "truncate() error");
+        }
+        exit(EXIT_FAILURE);
+      }
+      if (S_ISREG(out_stat.st_mode)) {
+        if (ftruncate(1, 0) < 0) {
+          if (dup2(saved_stderr_fd, STDERR_FILENO) == STDERR_FILENO) {
+            error(0, errno, "truncate() error");
+          }
         }
       }
     }
