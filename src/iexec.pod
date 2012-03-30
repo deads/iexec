@@ -30,7 +30,7 @@ Closes file descriptor I<fd> prior to executing I<program>.
 Keeps the shell's stdin, stdout, and stderr open.
 B<WARNING>: for debugging use only!
 
-=item B<-i|-o|-e|--stdin|-stdout|stderr> I<file>
+=item B<-i|-o|-e|--stdin|--stdout|--stderr> I<file>
 
 The file to use for standard input (B<-i> or B<--stdin>), standard output (B<-o> or B<--stdout>), and standard error (B<-e> or B<--stderr>)
 
@@ -38,7 +38,7 @@ The file to use for standard input (B<-i> or B<--stdin>), standard output (B<-o>
 
 The file to store the process id of the daemonized I<program>.
 
-=item B<--rlimit-cpu-hard|--rlimit-fsize-hard|--rlimit-data-hard|--rlimit-stack-hard|--rlimit-core-hard|--rlimit-rss-hard|--rlimit-nofile-hard|--rlimit-nproc-hard|--rlimit-memlock-hard|--rlimit-locks-hard|--rlimit-sigpending-hard|--rlimit-msgqueue-hard|--rlimit-nice-hard|--rlimit-rtprio-hard> v
+=item B<--rlimit-cpu-hard|--rlimit-fsize-hard|--rlimit-data-hard|--rlimit-stack-hard|--rlimit-core-hard|--rlimit-rss-hard|--rlimit-nofile-hard|--rlimit-nproc-hard|--rlimit-memlock-hard|--rlimit-locks-hard|--rlimit-sigpending-hard|--rlimit-msgqueue-hard|--rlimit-nice-hard|--rlimit-rtprio-hard> I<v>
 
 Sets the hard resource limit using B<setrlimit> to B<v>. If a B<--rlimit-*-soft> argument is specified for the same resource, the value is set together in a single B<setrlimit> call. If the current soft limit is lower than the new hard resource limit, the soft limit is set to this value.
 

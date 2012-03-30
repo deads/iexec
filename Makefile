@@ -1,5 +1,7 @@
 include make.inc
 
+CFLAGS += -D_GNU_SOURCE -ggdb
+
 all: src/iexec
 
 src/iexec: src/iexec.o 

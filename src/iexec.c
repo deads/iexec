@@ -20,6 +20,8 @@
 #include <libintl.h>
 #include <sys/time.h>
 #include <sys/resource.h>
+#include <sys/types.h>
+#include <pwd.h>
 #include "iexec-help.h"
 #include "iexec-help-nontty.h"
 
@@ -79,6 +81,8 @@ typedef struct iexec_config {
   long soft_limits[RLIMIT_NLIMITS];
   /* Values to set hard resource limits for setrlimit/getrlimit. */
   long hard_limits[RLIMIT_NLIMITS];
+
+  char *username;       /** The effective uid to run as. 0 means do not change it. */
 } iexec_config;
 
 /**
@@ -100,6 +104,22 @@ void usage(int use_stderr) {
  */
 void version() {
   printf("%s\n", IEXEC_VERSION);
+}
+
+/**
+ * Changes to a different user.
+ */
+
+void iexec_change_user(const char *user) {
+  struct passwd *pw = getpwnam(user);
+  if (pw == 0) {
+    error(0, errno, "could not find user %s", user);
+    exit(EXIT_FAILURE);
+  }
+  if (setuid(pw->pw_uid)) {
+    error(0, errno, "could not change to different user");
+    exit(EXIT_FAILURE);
+  }
 }
 
 /**
@@ -137,6 +157,7 @@ void iexec_config_set_default_values(iexec_config *config) {
   config->use_working_dir = 0;
   config->fds_to_close = 0;
   config->num_fds_to_close = 0;
+  config->username = 0;
   for (int i = 0; i < RLIMIT_NLIMITS; i++) {
     config->soft_limits[i] = IEXEC_RLIMIT_UNCHANGED;
     config->hard_limits[i] = IEXEC_RLIMIT_UNCHANGED;
@@ -157,10 +178,10 @@ void parse_options(int argc, char **argv, iexec_config *config) {
   while (1) {
     /* Define the long options in a structure array.*/
     static struct option long_options[] = {
-      {"help",             no_argument,       0, 'h'},
-      {"keep-open",        no_argument,       0, 'k'},
-      {"close",            required_argument, 0, 'c'},
-      {"pid",              required_argument, 0, 'p'},
+      {"close",                 required_argument, 0, 'c'},
+      {"help",                  no_argument,       0, 'h'},
+      {"keep-open",             no_argument,       0, 'k'},
+      {"pid",                   required_argument, 0, 'p'},
       {"rlimit-cpu-hard",       required_argument, 0, IEXEC_OPTION_RLIMIT_HARD + RLIMIT_CPU},
       {"rlimit-fsize-hard",     required_argument, 0, IEXEC_OPTION_RLIMIT_HARD + RLIMIT_FSIZE},
       {"rlimit-data-hard",      required_argument, 0, IEXEC_OPTION_RLIMIT_HARD + RLIMIT_DATA},
@@ -189,12 +210,13 @@ void parse_options(int argc, char **argv, iexec_config *config) {
       {"rlimit-msgqueue-soft",  required_argument, 0, IEXEC_OPTION_RLIMIT_SOFT + RLIMIT_MSGQUEUE},
       {"rlimit-nice-soft",      required_argument, 0, IEXEC_OPTION_RLIMIT_SOFT + RLIMIT_NICE},
       {"rlimit-rtprio-soft",    required_argument, 0, IEXEC_OPTION_RLIMIT_SOFT + RLIMIT_RTPRIO},
-      {"stdin",            required_argument, 0, 'i'},
-      {"stdout",           required_argument, 0, 'o'},
-      {"stderr",           required_argument, 0, 'e'},
-      {"umask",            required_argument, 0, IEXEC_OPTION_UMASK},
-      {"version",          no_argument,       0, IEXEC_OPTION_VERSION},
-      {"working-dir",      required_argument, 0, 'w'},
+      {"stdin",                 required_argument, 0, 'i'},
+      {"stdout",                required_argument, 0, 'o'},
+      {"stderr",                required_argument, 0, 'e'},
+      {"umask",                 required_argument, 0, IEXEC_OPTION_UMASK},
+      {"user",                  required_argument, 0, 'u'},
+      {"version",               no_argument,       0, IEXEC_OPTION_VERSION},
+      {"working-dir",           required_argument, 0, 'w'},
       {0, 0, 0, 0}
     };
     /* The option index which indicates the next option used. */
@@ -205,7 +227,7 @@ void parse_options(int argc, char **argv, iexec_config *config) {
     int *temp_fd_array = 0;
     
     /* Let's parse the next option. */
-    c = getopt_long (argc, argv, "khp:i:o:e:w:c:",
+    c = getopt_long (argc, argv, "khp:i:o:e:w:c:u:",
                      long_options, &option_index);
     
     /* If its the end of the options, leave the loop. */
@@ -244,6 +266,16 @@ void parse_options(int argc, char **argv, iexec_config *config) {
       break;
     case 'k':
       config->keep_open = 1;
+      break;
+    case 'u':
+      {
+        int len = strnlen(optarg,255);
+        config->username = malloc(len+1);
+        strncpy(config->username, optarg, len);
+        if (config->username == 0) {
+          error(0, errno, "could not find space for username");
+        }
+      }
       break;
     case 'c':
       /* If the -c option is specified, add the pid to an array. */
@@ -329,13 +361,15 @@ int main(int argc, char **argv) {
   /** Save standard error's file desciptor in case setsid() or execvp() fails. */
   int saved_stderr_fd = 2;
 
+  /** For each resource limit, */
   for (int i = 0; i < RLIMIT_NLIMITS; i++) {
+    /* If the soft_limit or hard_limit is specified as an option, process it. */
     const int soft_limit = config.soft_limits[i];
     const int hard_limit = config.hard_limits[i];
     if (soft_limit > IEXEC_RLIMIT_UNCHANGED || hard_limit > IEXEC_RLIMIT_UNCHANGED) {
       struct rlimit current_limit;
       getrlimit(i, &current_limit);
-      /* If the soft limit was specified, set it in the structure. */
+      /* If the soft limit was specified, check for validity, and then set it in the structure. */
       if (soft_limit > IEXEC_RLIMIT_UNCHANGED) {
         /* Check to see if the soft limit is valid. */
         if (current_limit.rlim_max != RLIM_INFINITY
@@ -366,6 +400,11 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
       }
     }
+  }
+
+  /** Change the effective user id. */
+  if (config.username != 0) {
+    iexec_change_user(config.username);
   }
   
   /** If the stdin,stderr,stdout file descriptors are not to be kept
@@ -447,7 +486,7 @@ int main(int argc, char **argv) {
       exit(EXIT_FAILURE);
     }
     /** Try reopening standard output using the file specified with -o. */
-    result = freopen(config.use_stdout_file, "w", stdout);
+    result = freopen(config.use_stdout_file, "a", stdout);
     if (result == 0) {
       if (dup2(saved_stderr_fd, STDERR_FILENO) == STDERR_FILENO) {
         error(0, errno, "failed to redirect standard output");
@@ -455,7 +494,7 @@ int main(int argc, char **argv) {
       exit(EXIT_FAILURE);
     }
     /** Try reopening standard error using the file specified with -e. */
-    result = freopen(config.use_stderr_file, "w", stderr);
+    result = freopen(config.use_stderr_file, "a", stderr);
     if (result == 0) {
       if (dup2(saved_stderr_fd, STDERR_FILENO) == STDERR_FILENO) {
         error(0, errno, "failed to redirect standard error");
