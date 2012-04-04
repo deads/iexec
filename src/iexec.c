@@ -20,8 +20,8 @@
 #include <libintl.h>
 #include <sys/time.h>
 #include <sys/resource.h>
-#include <sys/types.h>
 #include <pwd.h>
+#include <sys/wait.h>
 #include "iexec-help.h"
 #include "iexec-help-nontty.h"
 
@@ -29,6 +29,7 @@
 
 #define IEXEC_OPTION_UMASK 7001
 #define IEXEC_OPTION_VERSION 7002
+#define IEXEC_OPTION_CGROUP_PATH 7003
 
 #define IEXEC_OPTION_RLIMIT_SOFT 8000
 #define IEXEC_OPTION_RLIMIT_HARD 9000
@@ -72,6 +73,8 @@ typedef struct iexec_config {
                             is ignored when keep_open is true.*/
   char *use_pid_file;   /** The pathname to use for the pid file. 
                             (0 = ignore)*/
+  char *use_status_file;/** The pathname to use for the status file. 
+                            (0 = ignore)*/
   char *use_working_dir; /** The working directory of the daemonized program. */
   int remaining_argc;   /** The remaining argument count after iexec
                             arguments. */
@@ -83,6 +86,8 @@ typedef struct iexec_config {
   long hard_limits[RLIMIT_NLIMITS];
 
   char *username;       /** The effective uid to run as. 0 means do not change it. */
+  char *cgroup_path;    /** Cgroup path */
+  int no_daemonize;     /** If non-zero, do not daemonize. Block until child exits. */
 } iexec_config;
 
 /**
@@ -154,10 +159,12 @@ void iexec_config_set_default_values(iexec_config *config) {
   config->use_stdout_file = "/dev/null";
   config->use_stderr_file = "/dev/null";
   config->use_pid_file = 0;
+  config->use_status_file = 0;
   config->use_working_dir = 0;
   config->fds_to_close = 0;
   config->num_fds_to_close = 0;
   config->username = 0;
+  config->no_daemonize = 0;
   for (int i = 0; i < RLIMIT_NLIMITS; i++) {
     config->soft_limits[i] = IEXEC_RLIMIT_UNCHANGED;
     config->hard_limits[i] = IEXEC_RLIMIT_UNCHANGED;
@@ -181,7 +188,9 @@ void parse_options(int argc, char **argv, iexec_config *config) {
       {"close",                 required_argument, 0, 'c'},
       {"help",                  no_argument,       0, 'h'},
       {"keep-open",             no_argument,       0, 'k'},
+      {"no-daemonize",          no_argument,       0, 'n'},
       {"pid",                   required_argument, 0, 'p'},
+      /**{"cgroup-path",           required_argument, 0, IEXEC_OPTION_CGROUP_PATH},*/
       {"rlimit-as-hard",        required_argument, 0, IEXEC_OPTION_RLIMIT_HARD + RLIMIT_AS},
       {"rlimit-cpu-hard",       required_argument, 0, IEXEC_OPTION_RLIMIT_HARD + RLIMIT_CPU},
       {"rlimit-fsize-hard",     required_argument, 0, IEXEC_OPTION_RLIMIT_HARD + RLIMIT_FSIZE},
@@ -212,6 +221,7 @@ void parse_options(int argc, char **argv, iexec_config *config) {
       {"rlimit-msgqueue-soft",  required_argument, 0, IEXEC_OPTION_RLIMIT_SOFT + RLIMIT_MSGQUEUE},
       {"rlimit-nice-soft",      required_argument, 0, IEXEC_OPTION_RLIMIT_SOFT + RLIMIT_NICE},
       {"rlimit-rtprio-soft",    required_argument, 0, IEXEC_OPTION_RLIMIT_SOFT + RLIMIT_RTPRIO},
+      {"status",                required_argument, 0, 's'},
       {"stdin",                 required_argument, 0, 'i'},
       {"stdout",                required_argument, 0, 'o'},
       {"stderr",                required_argument, 0, 'e'},
@@ -229,7 +239,7 @@ void parse_options(int argc, char **argv, iexec_config *config) {
     int *temp_fd_array = 0;
     
     /* Let's parse the next option. */
-    c = getopt_long (argc, argv, "khp:i:o:e:w:c:u:",
+    c = getopt_long (argc, argv, "khns:p:i:o:e:w:c:u:",
                      long_options, &option_index);
     
     /* If its the end of the options, leave the loop. */
@@ -269,6 +279,9 @@ void parse_options(int argc, char **argv, iexec_config *config) {
     case 'k':
       config->keep_open = 1;
       break;
+    case 'n':
+      config->no_daemonize = 1;
+      break;
     case 'u':
       {
         int len = strnlen(optarg,255);
@@ -302,6 +315,9 @@ void parse_options(int argc, char **argv, iexec_config *config) {
     case 'p':
       config->use_pid_file = optarg;
       break;
+    case 's':
+      config->use_status_file = optarg;
+      break;
     case 'i':
       config->use_stdin_file = optarg;
       break;
@@ -310,6 +326,9 @@ void parse_options(int argc, char **argv, iexec_config *config) {
       break;
     case 'e':
       config->use_stderr_file = optarg;
+      break;
+    case IEXEC_OPTION_CGROUP_PATH:
+      config->cgroup_path = optarg;
       break;
     case IEXEC_OPTION_UMASK:
       config->umask = atoi(optarg);
@@ -370,7 +389,112 @@ int same_file(const char *fn1, const char *fn2) {
   }
   /* The files are the same iff their device and inode are the same. */
   return (s1.st_dev == s2.st_dev && s1.st_ino == s2.st_ino) ? 1 : 0; 
-} 
+}
+
+int iexec_monitor_child_as_parent(const iexec_config *config, int child_pid, int saved_stderr_fd) {
+  int retval_status = 0;
+
+  /** If the pid file was specified, write it to the file.*/
+  if (config->use_pid_file != 0) {
+    if (access(config->use_pid_file, W_OK) != 0 && errno != ENOENT) {
+      int saved_errno = errno;
+      if (dup2(saved_stderr_fd, STDERR_FILENO) == STDERR_FILENO) {
+        error(0, saved_errno, "file specified with -p (%s) is not writable", config->use_pid_file);
+      }
+      exit(EXIT_FAILURE);
+    }
+    
+    FILE *pid_file = fopen(config->use_pid_file, "w");
+    
+    /** If an error occurred when trying to open the pid_file, return it. */
+    if (pid_file == 0) {
+      int saved_errno = errno;
+      error(0, saved_errno, "unable to write pid file `%s'", config->use_pid_file);
+      exit(EXIT_FAILURE);
+    }
+    /** Write the pid to the pid file. */
+    int nc = fprintf(pid_file, "%d\n", child_pid);
+    if (nc == 0) {
+      int saved_errno = errno;
+      if (dup2(saved_stderr_fd, STDERR_FILENO) == STDERR_FILENO) {
+        error(0, saved_errno, "unable to write data to pid file `%s'", config->use_pid_file);
+      }
+      exit(EXIT_FAILURE);        
+    }
+    
+    /** Close the pid file. */
+    fclose(pid_file);
+  }
+
+  /** If the pid file was specified, write it to the file.*/
+  if (config->use_status_file != 0) {
+    if (access(config->use_status_file, W_OK) != 0 && errno != ENOENT) {
+      int saved_errno = errno;
+      if (dup2(saved_stderr_fd, STDERR_FILENO) == STDERR_FILENO) {
+        error(0, saved_errno, "file specified with -s (%s) is not writable", config->use_status_file);
+      }
+      exit(EXIT_FAILURE);
+    }
+    
+    FILE *status_file = fopen(config->use_status_file, "w");
+    
+    /** If an error occurred when trying to open the pid_file, return it. */
+    if (status_file == 0) {
+      int saved_errno = errno;
+      if (dup2(saved_stderr_fd, STDERR_FILENO) == STDERR_FILENO) {
+        error(0, saved_errno, "unable to write status file `%s'", config->use_status_file);
+      }
+      exit(EXIT_FAILURE);
+    }
+    fprintf(status_file, "pid %d\n", child_pid);
+    /** While the child hasn't terminated, keep waiting for a status change. */
+    while (1) {
+      /** Slot to store the status. */
+      int status;
+      int wret = waitpid(child_pid, &status, 0);
+      /** If successful in reading a status change... */
+      if (wret > 0) {
+        /** If the child exited, write the exit status. */
+        if (WIFEXITED(status)) {
+          int estatus = WEXITSTATUS(status);
+          fprintf(status_file, "exit %d\n", estatus);
+          retval_status = estatus;
+          break;
+        }
+        /** If the child was signaled and terminated, write the signal code. */
+        else if (WIFSIGNALED(status)) {
+          int esignal = WTERMSIG(status);
+          fprintf(status_file, "kill %d\n", esignal);
+          retval_status = 128 + esignal;
+          break;
+        }
+        /** If the child was signaled and stopped, write the signal code. */
+        else if (WIFSTOPPED(status)) {
+          int esignal = WSTOPSIG(status);
+          fprintf(status_file, "stop %d\n", esignal);
+        }
+        /** If the child was continued, write the signal code. */
+        else if (WIFCONTINUED(status)) {
+          int esignal = 18;
+          fprintf(status_file, "cont %d\n", esignal);
+        }
+      }
+      /** If there was an error, report it. */
+      else {
+        fprintf(status_file, "err\n");
+        fclose(status_file);
+        int saved_errno = errno;
+        if (dup2(saved_stderr_fd, STDERR_FILENO) == STDERR_FILENO) {
+          error(0, saved_errno, "error waiting for child `%d'", child_pid);
+        }
+        exit(EXIT_FAILURE);
+      }
+    } 
+    /** Close the pid file. */
+    fclose(status_file);
+  }
+  return retval_status;
+}
 
 /**
  * The main function.
@@ -380,7 +504,7 @@ int same_file(const char *fn1, const char *fn2) {
  */
 
 int main(int argc, char **argv) {
-  pid_t child_pid, session_pid;   /* The child pid and session pid. */
+  pid_t child_pid = 0, session_pid = 0;   /* The child pid and session pid. */
   iexec_config config;            /* The configuration. */
   int k;                          /* Looper variable. */
 
@@ -583,17 +707,35 @@ int main(int argc, char **argv) {
     if (config.umask >= 0) {
       umask(config.umask);
     }
-    /** Create a new session and make the child the process group
-        leader and session leader. */
-    session_pid = setsid();
+    if (config.no_daemonize == 0) {
+      /** Create a new session and make the child the process group
+          leader and session leader. */
+      session_pid = setsid();
 
-    /** If there was an error creating the new session, print an error
-        and exit. */
-    if (session_pid < 0) {
-      if (dup2(saved_stderr_fd, STDERR_FILENO) == STDERR_FILENO) {
-        error(0, errno, "setsid() failed");
+      /** If there was an error creating the new session, print an error
+          and exit. */
+      if (session_pid < 0) {
+        if (dup2(saved_stderr_fd, STDERR_FILENO) == STDERR_FILENO) {
+          error(0, errno, "setsid() failed");
+        }
+        exit(EXIT_FAILURE);
       }
-      exit(EXIT_FAILURE);
+    }
+
+    /** If -s is specified, wait fork again, and have the child wait
+        for the grandchild to finish */
+    if (config.use_status_file && config.no_daemonize == 0) {
+      int grandchild_pid = fork();
+      if (grandchild_pid > 0) { /* if we're not in the grand child, monitor the grandchild. */
+        iexec_monitor_child_as_parent(&config, grandchild_pid, saved_stderr_fd);
+        exit(0);
+      } else if (grandchild_pid < 0) {
+        int saved_errno = errno;
+        if (dup2(saved_stderr_fd, STDERR_FILENO) == STDERR_FILENO) {
+          error(0, saved_errno, "second monitoring fork() on `failed");
+        }
+        exit(EXIT_FAILURE);        
+      }
     }
 
     /* Run the desired comand in the new session. */
@@ -618,41 +760,13 @@ int main(int argc, char **argv) {
   /** If I am the parent, I have the child's pid. Write it to the pid
       file and forget the pid.*/
   if (child_pid) {
-
-    /** If the pid file was specified, write it to the file.*/
-    if (config.use_pid_file != 0) {
-      if (access(config.use_pid_file, W_OK) != 0 && errno != ENOENT) {
-        int saved_errno = errno;
-        if (dup2(saved_stderr_fd, STDERR_FILENO) == STDERR_FILENO) {
-          error(0, saved_errno, "file specified with -p (%s) is not writable", config.use_pid_file);
-        }
-        exit(EXIT_FAILURE);
-      }
-
-      FILE *pid_file = fopen(config.use_pid_file, "w");
-
-      /** If an error occurred when trying to open the pid_file, return it. */
-      if (pid_file == 0) {
-        int saved_errno = errno;
-        error(0, saved_errno, "unable to write pid file `%s'", config.use_pid_file);
-        exit(EXIT_FAILURE);
-      }
-      /** Write the pid to the pid file. */
-      int nc = fprintf(pid_file, "%d\n", child_pid);
-      if (nc == 0) {
-        int saved_errno = errno;
-        if (dup2(saved_stderr_fd, STDERR_FILENO) == STDERR_FILENO) {
-          error(0, saved_errno, "unable to write data to pid file `%s'", config.use_pid_file);
-        }
-        exit(EXIT_FAILURE);        
-      }
-
-      /** Close the pid file. */
-      fclose(pid_file);
+    if (config.use_status_file == 0) {
+      iexec_monitor_child_as_parent(&config, child_pid, saved_stderr_fd);
+    } else if (config.use_status_file != 0 && config.no_daemonize != 0) {
+      int exit_status = iexec_monitor_child_as_parent(&config, child_pid, saved_stderr_fd);
+      exit(exit_status);
     }
-    /** Forget the pid and exit. */
-    child_pid = 0;
-    exit(EXIT_SUCCESS);
+    exit(0);
   }
 
   /** We should never get here but the compiler expects a return in main(). */
